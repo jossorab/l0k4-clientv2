@@ -1,0 +1,184 @@
+package com.ll0k4.client.gui;
+
+import com.ll0k4.client.Ll0k4Client;
+import com.ll0k4.client.modules.render.HitboxModule;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.SliderWidget;
+import net.minecraft.text.Text;
+
+/**
+ * Écran de configuration avancée du module Hitbox.
+ * Permet de régler les couleurs RGBA et les filtres d'entités.
+ */
+public class HitboxSettingsScreen extends Screen {
+
+    private final Screen parent;
+    private HitboxModule hitbox;
+
+    // Quel groupe on édite : 0=joueurs, 1=mobs, 2=projectiles, 3=look vector
+    private int editTarget = 0;
+    private static final String[] TARGET_NAMES = {"Joueurs", "Mobs", "Projectiles", "Look Vector"};
+
+    public HitboxSettingsScreen(Screen parent) {
+        super(Text.literal("Hitbox - Configuration"));
+        this.parent = parent;
+    }
+
+    @Override
+    protected void init() {
+        hitbox = Ll0k4Client.moduleManager.getModule(HitboxModule.class);
+        rebuildWidgets();
+    }
+
+    private void rebuildWidgets() {
+        clearChildren();
+        if (hitbox == null) return;
+
+        int cx = this.width / 2;
+        int y  = 30;
+
+        // ── Sélecteur de cible ──
+        for (int i = 0; i < TARGET_NAMES.length; i++) {
+            final int idx = i;
+            boolean sel = editTarget == idx;
+            addDrawableChild(ButtonWidget.builder(
+                            Text.literal(sel ? "§b§l" + TARGET_NAMES[i] : "§7" + TARGET_NAMES[i]),
+                            b -> { editTarget = idx; rebuildWidgets(); })
+                    .dimensions(cx - 200 + i * 102, y, 100, 18)
+                    .build()
+            );
+        }
+        y += 26;
+
+        // ── Sliders RGBA ──
+        float[] col = getCurrentColor();
+        if (col != null) {
+            y = addColorSliders(col, cx, y);
+        }
+
+        y += 10;
+
+        // ── Filtres (checkboxes simulés en bouton toggle) ──
+        addDrawableChild(ButtonWidget.builder(
+                        Text.literal("Joueurs : " + (hitbox.isShowPlayers() ? "§aON" : "§cOFF")),
+                        b -> { hitbox.setShowPlayers(!hitbox.isShowPlayers()); rebuildWidgets(); })
+                .dimensions(cx - 200, y, 130, 18).build()
+        );
+        addDrawableChild(ButtonWidget.builder(
+                        Text.literal("Mobs : " + (hitbox.isShowMobs() ? "§aON" : "§cOFF")),
+                        b -> { hitbox.setShowMobs(!hitbox.isShowMobs()); rebuildWidgets(); })
+                .dimensions(cx - 60, y, 120, 18).build()
+        );
+        addDrawableChild(ButtonWidget.builder(
+                        Text.literal("Projectiles : " + (hitbox.isShowProjectiles() ? "§aON" : "§cOFF")),
+                        b -> { hitbox.setShowProjectiles(!hitbox.isShowProjectiles()); rebuildWidgets(); })
+                .dimensions(cx + 70, y, 140, 18).build()
+        );
+        y += 24;
+        addDrawableChild(ButtonWidget.builder(
+                        Text.literal("Look Vector : " + (hitbox.isShowLookVector() ? "§aON" : "§cOFF")),
+                        b -> { hitbox.setShowLookVector(!hitbox.isShowLookVector()); rebuildWidgets(); })
+                .dimensions(cx - 200, y, 160, 18).build()
+        );
+
+        // ── Bouton retour ──
+        addDrawableChild(ButtonWidget.builder(
+                        Text.literal("§7← Retour"),
+                        b -> client.setScreen(parent))
+                .dimensions(cx - 50, this.height - 28, 100, 20).build()
+        );
+    }
+
+    private int addColorSliders(float[] col, int cx, int startY) {
+        int y = startY;
+        String[] labels = {"R", "G", "B", "A"};
+        String[] colors = {"§c", "§a", "§9", "§7"};
+
+        for (int i = 0; i < 4; i++) {
+            final int channel = i;
+            final float[] ref = col;
+
+            // Slider Minecraft natif
+            SliderWidget slider = new SliderWidget(
+                    cx - 150, y, 300, 18,
+                    Text.literal(colors[i] + labels[i] + ": §f" + (int)(col[i] * 255)),
+                    col[i]
+            ) {
+                @Override
+                protected void updateMessage() {
+                    setMessage(Text.literal(colors[channel] + labels[channel]
+                            + ": §f" + (int)(value * 255)));
+                }
+
+                @Override
+                protected void applyValue() {
+                    ref[channel] = (float) value;
+                    applyColorToHitbox(ref);
+                }
+            };
+            addDrawableChild(slider);
+            y += 22;
+        }
+        return y;
+    }
+
+    private float[] getCurrentColor() {
+        if (hitbox == null) return null;
+        return switch (editTarget) {
+            case 0 -> hitbox.getPlayerColor();
+            case 1 -> hitbox.getMobColor();
+            case 2 -> hitbox.getProjectileColor();
+            case 3 -> hitbox.getLookVecColor();
+            default -> null;
+        };
+    }
+
+    private void applyColorToHitbox(float[] col) {
+        if (hitbox == null) return;
+        switch (editTarget) {
+            case 0 -> hitbox.setPlayerColor(col[0], col[1], col[2], col[3]);
+            case 1 -> hitbox.setMobColor(col[0], col[1], col[2], col[3]);
+            case 2 -> hitbox.setProjectileColor(col[0], col[1], col[2], col[3]);
+            case 3 -> hitbox.setLookVecColor(col[0], col[1], col[2], col[3]);
+        }
+    }
+
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        context.fillGradient(0, 0, this.width, this.height, 0xCC080810, 0xCC0d0d18);
+
+        // Titre
+        context.drawCenteredTextWithShadow(textRenderer,
+                Text.literal("§b§llL0k4 §7Client §8» §fHitbox Config"),
+                this.width / 2, 8, 0xFFFFFF);
+
+        // Prévisualisation de la couleur
+        float[] col = getCurrentColor();
+        if (col != null) {
+            int previewX = this.width / 2 + 160;
+            int previewY = 52;
+            int packed = packColor(col);
+            context.fill(previewX, previewY, previewX + 30, previewY + 30, packed);
+            // Bordure
+            context.fill(previewX - 1, previewY - 1, previewX + 31, previewY, 0xFFFFFFFF);
+            context.fill(previewX - 1, previewY + 30, previewX + 31, previewY + 31, 0xFFFFFFFF);
+            context.fill(previewX - 1, previewY, previewX, previewY + 30, 0xFFFFFFFF);
+            context.fill(previewX + 30, previewY, previewX + 31, previewY + 30, 0xFFFFFFFF);
+        }
+
+        super.render(context, mouseX, mouseY, delta);
+    }
+
+    private int packColor(float[] c) {
+        int a = (int)(c[3] * 255) & 0xFF;
+        int r = (int)(c[0] * 255) & 0xFF;
+        int g = (int)(c[1] * 255) & 0xFF;
+        int b = (int)(c[2] * 255) & 0xFF;
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    @Override
+    public boolean shouldPause() { return false; }
+}

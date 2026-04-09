@@ -1,0 +1,212 @@
+package com.ll0k4.client.gui;
+
+import com.ll0k4.client.Ll0k4Client;
+import com.ll0k4.client.core.Module;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.text.Text;
+
+import java.util.List;
+
+/**
+ * Menu principal du lL0k4 Client.
+ * Accessible via RSHIFT ou le bouton TitleScreen.
+ *
+ * Layout :
+ *  - Panneau gauche  : liste des catégories
+ *  - Panneau central : modules de la catégorie sélectionnée
+ *  - Panneau droit   : settings du module sélectionné
+ */
+public class ClientMenuScreen extends Screen {
+
+    private final Screen parent;
+
+    // Dimensions des panneaux
+    private static final int PANEL_MARGIN   = 10;
+    private static final int CAT_WIDTH      = 90;
+    private static final int MODULE_WIDTH   = 160;
+    private static final int ITEM_HEIGHT    = 20;
+    private static final int HEADER_HEIGHT  = 30;
+
+    private Module.Category selectedCategory = Module.Category.HUD;
+    private Module selectedModule = null;
+
+    // Scroll offset pour le panneau modules
+    private int moduleScrollOffset = 0;
+
+    public ClientMenuScreen(Screen parent) {
+        super(Text.literal("lL0k4 Client"));
+        this.parent = parent;
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        rebuildWidgets();
+    }
+
+    private void rebuildWidgets() {
+        clearChildren();
+
+        int panelTop    = PANEL_MARGIN + HEADER_HEIGHT;
+        int panelHeight = this.height - panelTop - PANEL_MARGIN;
+        int catX        = PANEL_MARGIN;
+        int modX        = catX + CAT_WIDTH + PANEL_MARGIN;
+
+        // ── Catégories ──
+        Module.Category[] cats = Module.Category.values();
+        for (int i = 0; i < cats.length; i++) {
+            Module.Category cat = cats[i];
+            boolean selected = cat == selectedCategory;
+            ButtonWidget btn = ButtonWidget.builder(
+                            Text.literal((selected ? "§b» " : "§7  ") + cat.getDisplayName()),
+                            b -> {
+                                selectedCategory = cat;
+                                selectedModule = null;
+                                moduleScrollOffset = 0;
+                                rebuildWidgets();
+                            })
+                    .dimensions(catX, panelTop + i * (ITEM_HEIGHT + 2), CAT_WIDTH, ITEM_HEIGHT)
+                    .build();
+            addDrawableChild(btn);
+        }
+
+        // ── Modules de la catégorie ──
+        List<Module> modules = Ll0k4Client.moduleManager.getModulesByCategory(selectedCategory);
+        int visibleCount = panelHeight / (ITEM_HEIGHT + 2);
+
+        for (int i = 0; i < modules.size(); i++) {
+            int idx = i + moduleScrollOffset;
+            if (idx >= modules.size()) break;
+            Module mod = modules.get(idx);
+            boolean sel = mod == selectedModule;
+
+            String prefix = mod.isEnabled() ? "§a✔ " : "§c✘ ";
+            ButtonWidget btn = ButtonWidget.builder(
+                            Text.literal(prefix + (sel ? "§f§l" : "§7") + mod.getName()),
+                            b -> {
+                                if (selectedModule == mod) {
+                                    mod.toggle();
+                                    Ll0k4Client.config.syncFromModules();
+                                    Ll0k4Client.config.save();
+                                } else {
+                                    selectedModule = mod;
+                                }
+                                rebuildWidgets();
+                            })
+                    .dimensions(modX, panelTop + i * (ITEM_HEIGHT + 2), MODULE_WIDTH, ITEM_HEIGHT)
+                    .build();
+            addDrawableChild(btn);
+        }
+
+        // ── Panneau settings du module sélectionné ──
+        int settX = modX + MODULE_WIDTH + PANEL_MARGIN;
+        if (selectedModule != null) {
+            buildModuleSettings(selectedModule, settX, panelTop, panelHeight);
+        }
+
+        // ── Bouton Fermer ──
+        addDrawableChild(ButtonWidget.builder(
+                        Text.literal("§cFermer"),
+                        b -> close())
+                .dimensions(this.width - 60 - PANEL_MARGIN, PANEL_MARGIN, 60, 20)
+                .build()
+        );
+    }
+
+    /**
+     * Construit les settings spécifiques au module sélectionné.
+     * Extensible : chaque module peut avoir sa propre sous-GUI.
+     */
+    private void buildModuleSettings(Module mod, int x, int y, int height) {
+        int settWidth = this.width - x - PANEL_MARGIN;
+        if (settWidth < 80) return;
+
+        // Bouton toggle principal
+        addDrawableChild(ButtonWidget.builder(
+                        Text.literal(mod.isEnabled() ? "§a§lACTIF" : "§c§lINACTIF"),
+                        b -> {
+                            mod.toggle();
+                            Ll0k4Client.config.syncFromModules();
+                            Ll0k4Client.config.save();
+                            rebuildWidgets();
+                        })
+                .dimensions(x, y, settWidth, ITEM_HEIGHT)
+                .build()
+        );
+
+        // Sous-screen dédié selon le module
+        int btnY = y + ITEM_HEIGHT + 4;
+        if (mod instanceof com.ll0k4.client.modules.render.HitboxModule) {
+            addDrawableChild(ButtonWidget.builder(
+                            Text.literal("§eConfigurer Hitbox..."),
+                            b -> client.setScreen(new HitboxSettingsScreen(this)))
+                    .dimensions(x, btnY, settWidth, ITEM_HEIGHT)
+                    .build()
+            );
+        }
+    }
+
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        // Fond semi-transparent
+        context.fillGradient(0, 0, this.width, this.height, 0xCC080810, 0xCC0d0d18);
+
+        int panelTop    = PANEL_MARGIN + HEADER_HEIGHT;
+        int panelHeight = this.height - panelTop - PANEL_MARGIN;
+        int catX        = PANEL_MARGIN;
+        int modX        = catX + CAT_WIDTH + PANEL_MARGIN;
+        int settX       = modX + MODULE_WIDTH + PANEL_MARGIN;
+
+        // Bordures de panneaux
+        drawPanel(context, catX - 2, panelTop - 2, CAT_WIDTH + 4, panelHeight + 4);
+        drawPanel(context, modX - 2, panelTop - 2, MODULE_WIDTH + 4, panelHeight + 4);
+        if (selectedModule != null) {
+            drawPanel(context, settX - 2, panelTop - 2, this.width - settX - PANEL_MARGIN + 4, panelHeight + 4);
+        }
+
+        // Titre
+        context.drawTextWithShadow(textRenderer,
+                Text.literal("§b§llL0k4 §7Client §8v1.0"),
+                PANEL_MARGIN, PANEL_MARGIN + 6, 0xFFFFFF);
+
+        // Description module sélectionné
+        if (selectedModule != null) {
+            int settWidth = this.width - settX - PANEL_MARGIN;
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal("§8" + selectedModule.getDescription()),
+                    settX, panelTop + ITEM_HEIGHT + PANEL_MARGIN * 2, 0x888888);
+        }
+
+        super.render(context, mouseX, mouseY, delta);
+    }
+
+    private void drawPanel(DrawContext ctx, int x, int y, int w, int h) {
+        // Fond
+        ctx.fill(x, y, x + w, y + h, 0x88111122);
+        // Bordure top/bottom
+        ctx.fill(x, y, x + w, y + 1, 0xFF2244AA);
+        ctx.fill(x, y + h - 1, x + w, y + h, 0xFF2244AA);
+        // Bordure left/right
+        ctx.fill(x, y, x + 1, y + h, 0xFF2244AA);
+        ctx.fill(x + w - 1, y, x + w, y + h, 0xFF2244AA);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        List<Module> modules = Ll0k4Client.moduleManager.getModulesByCategory(selectedCategory);
+        int max = Math.max(0, modules.size() - ((this.height - PANEL_MARGIN - HEADER_HEIGHT - PANEL_MARGIN) / (ITEM_HEIGHT + 2)));
+        moduleScrollOffset = (int) Math.max(0, Math.min(max, moduleScrollOffset - verticalAmount));
+        rebuildWidgets();
+        return true;
+    }
+
+    @Override
+    public boolean shouldPause() { return false; }
+
+    @Override
+    public void close() {
+        client.setScreen(parent);
+    }
+}

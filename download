@@ -1,0 +1,68 @@
+package com.ll0k4.client.util;
+
+import com.ll0k4.client.Ll0k4Client;
+import com.ll0k4.client.modules.hud.*;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.font.TextRenderer;
+
+/**
+ * Rendu HUD centralisé — enregistré via HudRenderCallback.
+ * Chaque module HUD délègue son rendu ici.
+ */
+public class HudRenderer {
+
+    private static final MinecraftClient mc = MinecraftClient.getInstance();
+
+    public static void register() {
+        HudRenderCallback.EVENT.register(HudRenderer::onHudRender);
+    }
+
+    private static void onHudRender(DrawContext context, RenderTickCounter tickCounter) {
+        if (mc.player == null || mc.world == null) return;
+        if (mc.options.debugEnabled) return; // Masquer si F3 ouvert
+
+        TextRenderer tr = mc.textRenderer;
+        int lineHeight = 10;
+        int x = 2;
+        int y = 2;
+
+        // FPS
+        FpsModule fps = Ll0k4Client.moduleManager.getModule(FpsModule.class);
+        if (fps != null && fps.isEnabled()) {
+            context.drawTextWithShadow(tr, fps.getDisplayText(), x, y, fps.getColor());
+            y += lineHeight;
+        }
+
+        // CPS
+        CpsModule cps = Ll0k4Client.moduleManager.getModule(CpsModule.class);
+        if (cps != null && cps.isEnabled()) {
+            context.drawTextWithShadow(tr, cps.getDisplayText(), x, y, cps.getColor());
+            y += lineHeight;
+        }
+
+        // Coordonnées
+        CoordinatesModule coords = Ll0k4Client.moduleManager.getModule(CoordinatesModule.class);
+        if (coords != null && coords.isEnabled()) {
+            for (String line : coords.getDisplayLines()) {
+                context.drawTextWithShadow(tr, line, x, y, coords.getColor());
+                y += lineHeight;
+            }
+        }
+
+        // Direction
+        DirectionModule dir = Ll0k4Client.moduleManager.getModule(DirectionModule.class);
+        if (dir != null && dir.isEnabled()) {
+            context.drawTextWithShadow(tr, dir.getDisplayText(), x, y, dir.getColor());
+            y += lineHeight;
+        }
+
+        // Armor Status (bas gauche)
+        ArmorStatusModule armor = Ll0k4Client.moduleManager.getModule(ArmorStatusModule.class);
+        if (armor != null && armor.isEnabled()) {
+            armor.render(context, tr);
+        }
+    }
+}
